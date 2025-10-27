@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Folder → Tree Text | 階層図プレビュー</title>
+<style>
+  :root{
+    --bg: #0b1020;
+    --panel: rgba(255,255,255,0.06);
+    --panel-2: rgba(255,255,255,0.12);
+    --text: #e8ecf1;
+    --muted: #9bb0c3;
+    --brand: #6ee7ff;
+    --brand-2: #8b5cf6;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+  }
+  html,body{height:100%;}
+  body{
+    margin:0; color:var(--text); background:
+      radial-gradient(60vw 60vh at 10% 0%, #101a39 0%, transparent 60%),
+      radial-gradient(50vw 50vh at 100% 100%, #1a1540 0%, transparent 60%),
+      linear-gradient(180deg, #060910 0%, #0b1020 100%);
+    font: 15px/1.6 system-ui, -apple-system, Segoe UI, Roboto, 'Hiragino Kaku Gothic ProN', 'BIZ UDPGothic', Meiryo, sans-serif;
+  }
+  .wrap{max-width:1100px; margin:3rem auto; padding:0 16px;}
+  header{
+    display:flex; align-items:center; gap:16px; margin-bottom:18px;
+  }
+  .logo{
+    width:48px; height:48px; border-radius:14px; background:
+      conic-gradient(from 200deg, var(--brand), var(--brand-2));
+    box-shadow:0 10px 30px rgba(109, 76, 255, .35), inset 0 0 20px rgba(255,255,255,.15);
+  }
+  h1{font-size: clamp(20px, 2.4vw, 30px); margin:0; letter-spacing:.3px}
+  .sub{color:var(--muted); font-size: 13px}
+
+  .panel{background:var(--panel); border:1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+    border-radius:20px; padding:18px; backdrop-filter: blur(8px);
+  }
+
+  .u-row{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+  .btn{
+    appearance:none; border:none; border-radius:12px; padding:10px 14px;
+    background:linear-gradient(135deg, rgba(142, 124, 255,.2), rgba(110,231,255,.15));
+    color:var(--text); cursor:pointer; font-weight:600;
+    border:1px solid rgba(255,255,255,.15);
+    transition: transform .06s ease, box-shadow .2s ease;
+  }
+  .btn:hover{box-shadow:0 8px 20px rgba(109,76,255,.35)}
+  .btn:active{transform:translateY(1px)}
+  .btn.secondary{background:linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.05));}
+  .btn.ghost{background:transparent; border:1px dashed rgba(255,255,255,.25)}
+  .hidden-input{position:absolute; opacity:0; pointer-events:none; width:0; height:0}
+
+  .dropzone{
+    margin-top:12px; padding:18px; border-radius:16px;
+    border: 1px dashed rgba(255,255,255,.22);
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    text-align:center; color:var(--muted);
+  }
+  .dropzone.drag{border-color: var(--brand); color:var(--text); box-shadow: inset 0 0 0 2px rgba(110,231,255,.25)}
+
+  .toolbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-top:16px}
+  .toggles{display:flex; flex-wrap:wrap; gap:10px}
+  .toggle{display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05)}
+  .toggle input{accent-color:#9ae6ff}
+  .meta{color:var(--muted); font-size:12px}
+
+  .preview{
+    margin-top:14px; border-radius:16px; overflow:hidden; border:1px solid rgba(255,255,255,.1);
+    background: #070a14; position:relative;
+  }
+  .pre-head{display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));}
+  .pre-head .actions{display:flex; gap:8px}
+  .pre-body{max-height:60vh; overflow:auto}
+  pre{margin:0; padding:16px; font: 13px/1.5 SFMono-Regular, Menlo, Consolas, 'BIZ UDGothic', 'Noto Sans Mono CJK JP', monospace; color:#dfe7f7; white-space:pre;}
+  .em{color:#a5b4fc}
+  .ok{color:var(--ok)}
+  .warn{color:var(--warn)}
+
+  .progress{height:8px; background:rgba(255,255,255,.08); overflow:hidden}
+  .bar{height:100%; width:0%; background:linear-gradient(90deg, var(--brand), var(--brand-2)); transition:width .2s ease}
+
+  footer{margin-top:22px; color:var(--muted); font-size:12px}
+  kbd{padding:.2em .5em; border-radius:.4em; border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); font-size:11px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo"></div>
+      <div>
+        <h1>フォルダを読み込んで <span class="em">テキストのファイル階層図</span> を作る</h1>
+        <div class="sub">File API 利用・プレビュー専用。コピーまたはダウンロードで保存できます。</div>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="u-row">
+        <button class="btn" id="pickBtn">フォルダを選択</button>
+        <input id="folder" class="hidden-input" type="file" webkitdirectory directory multiple>
+        <button class="btn ghost" id="clearBtn" title="プレビューをクリア">クリア</button>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        フォルダやファイルをここへドラッグ＆ドロップ（サブフォルダにも対応）
+      </div>
+
+      <div class="toolbar">
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" id="optShowSize" checked> サイズを表示</label>
+          <label class="toggle"><input type="checkbox" id="optShowCount" checked> 件数サマリ</label>
+          <label class="toggle"><input type="checkbox" id="optIgnoreDot" checked> ドットファイルを除外</label>
+          <label class="toggle"><input type="checkbox" id="optSortDirFirst" checked> フォルダ優先ソート</label>
+        </div>
+        <div class="meta" id="meta">未読込</div>
+      </div>
+
+      <div class="progress" aria-hidden="true"><div class="bar" id="bar"></div></div>
+
+      <div class="preview" id="preview">
+        <div class="pre-head">
+          <div>プレビュー</div>
+          <div class="actions">
+            <button class="btn secondary" id="copyBtn" title="テキストをコピー"><span>コピー</span></button>
+            <button class="btn secondary" id="downloadBtn" title=".txtで保存"><span>ダウンロード</span></button>
+          </div>
+        </div>
+        <div class="pre-body"><pre id="out">（ここに階層図が表示されます）</pre></div>
+      </div>
+
+      <footer>
+        <p>対応ブラウザ: 最新の Chromium 系 / Firefox / Safari。
+        ドラッグ＆ドロップでディレクトリを展開する場合は
+        <code>DataTransferItem.webkitGetAsEntry()</code> による再帰読み込みを併用しています。
+        権限保存や LocalStorage / IndexedDB は使っていません。</p>
+        <p>ショートカット: <kbd>Ctrl / ⌘</kbd> + <kbd>C</kbd> でプレビューコピー。</p>
+      </footer>
+    </section>
+  </div>
+
+<script>
+// ========= ユーティリティ =========
+const $ = sel => document.querySelector(sel);
+const bar = $('#bar');
+const meta = $('#meta');
+const out = $('#out');
+const dropzone = $('#dropzone');
+const folderInput = $('#folder');
+
+function formatBytes(bytes){
+  if(bytes === 0) return '0 B';
+  const k = 1024; const sizes = ['B','KB','MB','GB','TB'];
+  const i = Math.floor(Math.log(bytes)/Math.log(k));
+  return (bytes/Math.pow(k,i)).toFixed(i?1:0) + ' ' + sizes[i];
+}
+
+function normalizePath(p){
+  // Windows のバックスラッシュをスラッシュに統一
+  return p.replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+// ツリー構造{ type:'dir'|'file', name, size?, children? }
+function buildTree(files, {ignoreDot=true, sortDirFirst=true}={}){
+  const root = {type:'dir', name:'/', children:new Map()};
+  for(const f of files){
+    const path = normalizePath(f.path);
+    if(!path) continue;
+    const parts = path.split('/');
+    // ignore dotfile if opted
+    if(ignoreDot && parts.some(seg => seg.startsWith('.'))) continue;
+    let cur = root;
+    for(let i=0;i<parts.length;i++){
+      const seg = parts[i];
+      const isFile = i === parts.length - 1 && !f.isDir;
+      if(isFile){
+        cur.children.set(seg, {type:'file', name:seg, size:f.size||0});
+      }else{
+        if(!cur.children.has(seg)) cur.children.set(seg, {type:'dir', name:seg, children:new Map()});
+        cur = cur.children.get(seg);
+      }
+    }
+  }
+  // sort
+  function sortMap(m){
+    const arr = [...m.values()].map(n=>{
+      if(n.type==='dir') n.children = sortMap(n.children);
+      return n;
+    });
+    arr.sort((a,b)=>{
+      if(sortDirFirst){
+        if(a.type!==b.type) return a.type==='dir' ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name, 'ja');
+    });
+    const nm = new Map();
+    for(const n of arr) nm.set(n.name, n);
+    return nm;
+  }
+  root.children = sortMap(root.children);
+  return root;
+}
+
+function treeToText(node, {showSize=true}={}, prefix=''){ // 罫線生成
+  const lines = [];
+  function walk(n, pref){
+    const ch = n.children ? [...n.children.values()] : [];
+    ch.forEach((child, idx)=>{
+      const last = idx === ch.length-1;
+      const branch = last ? '└─ ' : '├─ ';
+      const nextPref = pref + (last ? '   ' : '│  ');
+      if(child.type==='file'){
+        const sizeStr = showSize ? ` (${formatBytes(child.size)})` : '';
+        lines.push(pref + branch + child.name + sizeStr);
+      }else{
+        lines.push(pref + branch + child.name + '/');
+        walk(child, nextPref);
+      }
+    });
+  }
+  lines.push(node.name);
+  walk(node, '');
+  return lines.join('\n');
+}
+
+function summarize(files){
+  let totalSize = 0, fileCount = 0, dirSet = new Set();
+  for(const f of files){
+    if(f.isDir) continue;
+    fileCount++; totalSize += f.size||0;
+    const np = normalizePath(f.path);
+    const parts = np.split('/'); parts.pop();
+    let acc = '';
+    for(const p of parts){ acc += (acc?'/':'') + p; dirSet.add(acc); }
+  }
+  return {fileCount, dirCount: dirSet.size, totalSize};
+}
+
+function setProgress(percent){ bar.style.width = percent + '%'; }
+function setMeta(text){ meta.textContent = text; }
+
+// ========= 入力ハンドリング =========
+
+// 1) <input type=file webkitdirectory>
+$('#pickBtn').addEventListener('click', ()=> folderInput.click());
+folderInput.addEventListener('change', async (e)=>{
+  const files = [...e.target.files].map(f=>({
+    path: f.webkitRelativePath || f.name,
+    size: f.size,
+    isDir: false,
+    file: f
+  }));
+  await processEntries(files);
+});
+
+// 2) ドラッグ＆ドロップ（ファイル or ディレクトリ再帰）
+function setupDnD(){
+  ['dragenter','dragover'].forEach(ev=> dropzone.addEventListener(ev, (e)=>{
+    e.preventDefault();
+    e.dataTransfer.dropEffect='copy';
+    dropzone.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev=> dropzone.addEventListener(ev, ()=> dropzone.classList.remove('drag')));
+  dropzone.addEventListener('drop', async (e)=>{
+    e.preventDefault();
+    const items = [...(e.dataTransfer.items||[])];
+    try{
+      const entries = await getDroppedEntries(items);
+      if(entries && entries.length){
+        await processEntries(entries);
+      }else{
+        // fallback: plain FileList
+        const files = [...(e.dataTransfer.files||[])].map(f=>({ path: f.name, size: f.size, isDir:false, file:f }));
+        await processEntries(files);
+      }
+    }catch(err){
+      console.error(err);
+      toast('ドロップの解析に失敗しました。フォルダ選択をご利用ください。','warn');
+    }
+  });
+}
+setupDnD();
+
+// DataTransferItem からフォルダ/ファイルを取り出す（複数API対応）
+async function getDroppedEntries(items){
+  // 1) File System Access API: getAsFileSystemHandle (Chromium系)
+  if(items.length && typeof items[0].getAsFileSystemHandle === 'function'){
+    return await handlesFromDataTransfer(items);
+  }
+  // 2) webkitGetAsEntry (Chrome/Safari系の後方互換)
+  if(items.some(i=> typeof i.webkitGetAsEntry === 'function')){
+    return await entriesFromWebkit(items);
+  }
+  // 3) 取得不可 → 空
+  return [];
+}
+
+async function handlesFromDataTransfer(items){
+  const results = [];
+  async function walkHandle(handle, parentPath=''){
+    const full = parentPath ? parentPath + '/' + handle.name : handle.name;
+    if(handle.kind === 'file'){
+      const file = await handle.getFile();
+      results.push({ path: full, size: file.size, isDir:false, file });
+    }else if(handle.kind === 'directory'){
+      // directory marker（カウント用）
+      results.push({ path: full + '/', isDir:true });
+      for await (const child of handle.values()){
+        await walkHandle(child, full);
+      }
+    }
+  }
+  for(const it of items){
+    const h = await it.getAsFileSystemHandle();
+    if(h) await walkHandle(h);
+  }
+  return results;
+}
+
+async function entriesFromWebkit(items){
+  const results = [];
+  async function walkEntry(entry, parentPath = ''){
+    const full = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    if(entry.isFile){
+      results.push(await fileFromFileEntry(entry, full));
+      return;
+    }
+    if(entry.isDirectory){
+      // ディレクトリのマーカー（件数用）
+      results.push({ path: full + '/', isDir: true });
+      const children = await readAllEntries(entry);
+      for(const child of children){
+        await walkEntry(child, full);
+      }
+    }
+  }
+  for(const it of items){
+    const entry = (typeof it.webkitGetAsEntry === 'function') ? it.webkitGetAsEntry() : null;
+    if(entry){
+      await walkEntry(entry);
+    }
+  }
+  return results;
+}
+
+function readAllEntries(dirEntry){
+  return new Promise((resolve)=>{
+    const reader = dirEntry.createReader();
+    const out = [];
+    function read(){
+      reader.readEntries(entries=>{
+        if(entries.length){ out.push(...entries); read(); }
+        else resolve(out);
+      });
+    }
+    read();
+  });
+}
+
+function fileFromFileEntry(entry, fullPath){
+  return new Promise((resolve, reject)=>{
+    entry.file(file=>{
+      resolve({ path: fullPath, size: file.size, isDir:false, file });
+    }, reject);
+  });
+}
+
+// ========= メイン処理 =========
+async function processEntries(entries){
+  setProgress(0); setMeta('解析中…'); out.textContent = 'スキャン中…';
+
+  // normalize: remove trailing slash markers for files, keep only files + their paths
+  const files = entries.filter(e=>!e.isDir).map(e=>({
+    path: normalizePath(e.path), size: e.size||0, isDir:false
+  }));
+
+  // オプション取得
+  const opts = getOptions();
+
+  // サマリ
+  const sum = summarize(files);
+
+  // ツリー化
+  const tree = buildTree(files, {ignoreDot: opts.ignoreDot, sortDirFirst: opts.sortDirFirst});
+
+  // テキスト化
+  const text = treeToText(tree, {showSize: opts.showSize});
+
+  // 出力
+  out.textContent = text;
+  setProgress(100);
+  const metaText = `${sum.fileCount.toLocaleString()} files / ${sum.dirCount.toLocaleString()} dirs  |  サイズ: ${formatBytes(sum.totalSize)}`;
+  setMeta(metaText);
+}
+
+function getOptions(){
+  return {
+    showSize: $('#optShowSize').checked,
+    showCount: $('#optShowCount').checked,
+    ignoreDot: $('#optIgnoreDot').checked,
+    sortDirFirst: $('#optSortDirFirst').checked
+  };
+}
+
+// ========= アクション =========
+$('#copyBtn').addEventListener('click', async ()=>{
+  const text = out.textContent || '';
+  try{
+    await navigator.clipboard.writeText(text);
+    toast('コピーしました', 'ok');
+  }catch(err){
+    // フォールバック
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    toast('コピーしました（フォールバック）', 'ok');
+  }
+});
+
+$('#downloadBtn').addEventListener('click', ()=>{
+  const blob = new Blob([out.textContent||''], {type:'text/plain;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `file-tree_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('#clearBtn').addEventListener('click', ()=>{
+  out.textContent = '（ここに階層図が表示されます）';
+  setMeta('未読込');
+  setProgress(0);
+});
+
+// ========= トースト =========
+let toastTimer = null;
+function toast(text, type='info'){
+  let t = document.querySelector('.toast');
+  if(!t){
+    t = document.createElement('div');
+    t.className = 'toast';
+    Object.assign(t.style,{
+      position:'fixed', left:'50%', bottom:'24px', transform:'translateX(-50%)',
+      background:'rgba(0,0,0,.75)', color:'#fff', padding:'10px 14px', borderRadius:'10px',
+      boxShadow:'0 10px 30px rgba(0,0,0,.35)', border:'1px solid rgba(255,255,255,.12)', zIndex:9999,
+      backdropFilter:'blur(6px)'
+    });
+    document.body.appendChild(t);
+  }
+  t.textContent = text;
+  t.style.opacity = '1';
+  t.style.background = type==='ok' ? 'rgba(34,197,94,.85)' : (type==='warn'?'rgba(245,158,11,.9)':'rgba(0,0,0,.75)');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> t.style.opacity='0', 1800);
+}
+
+// ========= オプション変更で即時再生成（プレビューがある場合） =========
+['optShowSize','optIgnoreDot','optSortDirFirst'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', ()=>{
+    const txt = out.textContent;
+    if(!txt || txt.includes('ここに階層図')) return;
+    // 再構築は元ファイルが必要だが、簡易的にサイズ非表示の切替のみはテキスト側で置換できないため、
+    // 直近の files は記憶していない方針。ユーザーは再度読み込みを行ってください。
+    toast('オプションを変更しました。再度フォルダを読み込むと反映されます。', 'warn');
+  });
+});
+
+</script>
+</body>
+</html>
